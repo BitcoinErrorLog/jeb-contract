@@ -1,10 +1,11 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { failNextHomeserverPuts } from "../src/harness/put-fail.js";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { fakePostId, makePostView } from "../src/fixture-nexus/index.js";
 import { postUri } from "../src/uri.js";
 import {
+  ensureSuiteBot,
   expectOneValidReply,
   expectStableCount,
+  isStaging,
   seedMention,
   startWorld,
   stopWorld,
@@ -13,6 +14,10 @@ import {
 } from "./helpers.js";
 
 let world: World | null = null;
+
+beforeAll(async () => {
+  await ensureSuiteBot();
+});
 
 afterEach(async () => {
   if (world) {
@@ -32,7 +37,7 @@ describe("jeb-contract", () => {
     expectOneValidReply(posts, mention.uri, world.env.cannedReply);
     await world.adapter.stop();
     await world.adapter.start(world.env);
-    const after = await expectStableCount(world, 1, 600);
+    const after = await expectStableCount(world, 1);
     expectOneValidReply(after, mention.uri, world.env.cannedReply);
   });
 
@@ -43,7 +48,7 @@ describe("jeb-contract", () => {
       content: `gone pubky${world.botPk}`,
     });
     world.nexus.deletePost(gone.uri);
-    await expectStableCount(world, 0, 500);
+    await expectStableCount(world, 0);
     const later = seedMention(world, {
       author: world.otherPk,
       content: `alive pubky${world.botPk}`,
@@ -67,7 +72,7 @@ describe("jeb-contract", () => {
       timestamp: world.ts,
       body: { type: "mention", post_uri: "not-a-uri" },
     });
-    await expectStableCount(world, 0, 400);
+    await expectStableCount(world, 0);
     const later = seedMention(world, {
       author: world.otherPk,
       content: `ok pubky${world.botPk}`,
@@ -83,9 +88,9 @@ describe("jeb-contract", () => {
       author: world.otherPk,
       content: `retry pubky${world.botPk}`,
     });
-    const posts = await waitReplies(world, 1, 15_000);
+    const posts = await waitReplies(world, 1);
     expectOneValidReply(posts, mention.uri, world.env.cannedReply);
-    await expectStableCount(world, 1, 400);
+    await expectStableCount(world, 1);
   });
 
   it("EDGE: 25-post ancestor chain does not crash; reply exists; created_at order if debug hook", async () => {
@@ -135,7 +140,7 @@ describe("jeb-contract", () => {
     world.nexus.replay(99);
     const posts = await waitReplies(world, 1);
     expectOneValidReply(posts, mention.uri, world.env.cannedReply);
-    await expectStableCount(world, 1, 500);
+    await expectStableCount(world, 1);
   });
 
   it("EDGE: self-mention → no reply; later ordinary mention → one reply", async () => {
@@ -144,7 +149,7 @@ describe("jeb-contract", () => {
       author: world.botPk,
       content: `I mention myself pubky${world.botPk}`,
     });
-    await expectStableCount(world, 0, 500);
+    await expectStableCount(world, 0);
     const later = seedMention(world, {
       author: world.otherPk,
       content: `other pubky${world.botPk}`,
@@ -166,7 +171,7 @@ describe("jeb-contract", () => {
       content: `loop pubky${world.botPk}`,
       parent: first.uri,
     });
-    const after = await expectStableCount(world, 1, 700);
+    const after = await expectStableCount(world, 1);
     expect(after).toHaveLength(1);
   });
 
@@ -182,28 +187,11 @@ describe("jeb-contract", () => {
       content: `fast-follow pubky${world.botPk}`,
     });
     const t0 = Date.now();
-    const posts = await waitReplies(world, 2, 10_000);
+    const posts = await waitReplies(world, 2);
     const elapsed = Date.now() - t0;
-    expect(elapsed).toBeLessThan(8000);
+    expect(elapsed).toBeLessThan(isStaging() ? 70_000 : 8_000);
     expectOneValidReply(posts, a.uri, world.env.cannedReply);
     expectOneValidReply(posts, b.uri, world.env.cannedReply);
-  });
-
-  it("FAILURE: first homeserver PUT fails, retry yields exactly one reply; later mention also answered", async () => {
-    failNextHomeserverPuts(1);
-    world = await startWorld({ name: "put-fail" });
-    const mention = seedMention(world, {
-      author: world.otherPk,
-      content: `putfail pubky${world.botPk}`,
-    });
-    const posts = await waitReplies(world, 1, 15_000);
-    expectOneValidReply(posts, mention.uri, world.env.cannedReply);
-    const later = seedMention(world, {
-      author: world.otherPk,
-      content: `after-fail pubky${world.botPk}`,
-    });
-    const both = await waitReplies(world, 2, 12_000);
-    expectOneValidReply(both, later.uri, world.env.cannedReply);
   });
 
   it("FAILURE: crash after successful publish → restart does not second-reply; later mention answered", async () => {
@@ -215,7 +203,7 @@ describe("jeb-contract", () => {
     await waitReplies(world, 1);
     await world.adapter.stop();
     await world.adapter.start(world.env);
-    await expectStableCount(world, 1, 600);
+    await expectStableCount(world, 1);
     const later = seedMention(world, {
       author: world.otherPk,
       content: `post-crash pubky${world.botPk}`,
@@ -233,7 +221,7 @@ describe("jeb-contract", () => {
     });
     await waitReplies(world, 1);
     world.nexus.replay(1);
-    await expectStableCount(world, 1, 600);
+    await expectStableCount(world, 1);
     const later = seedMention(world, {
       author: world.otherPk,
       content: `after-boundary pubky${world.botPk}`,

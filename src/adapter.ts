@@ -23,6 +23,11 @@ export interface ContractEnv {
    * (root post + descendants). Contract default is 1.
    */
   maxRepliesPerThread: number;
+  /**
+   * `true` → build `Pubky.testnet()` (static local testnet).
+   * `false` → `new Pubky()` (default pkarr / staging or mainnet homeserver).
+   */
+  testnet: boolean;
 }
 
 export interface AncestorContextEntry {

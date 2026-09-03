@@ -3,12 +3,13 @@
  *
  * Tiny bot used only to prove the Jeb contract harness: poll fixture Nexus,
  * honor cannedReply / modelDelayMs / maxRepliesPerThread, publish one
- * PubkyAppPost via @synonymdev/pubky to the testnet homeserver, keep
- * in-memory idempotency. Do not ship this as an answer bot.
+ * PubkyAppPost via @synonymdev/pubky (real SDK session.storage.putJson),
+ * keep in-memory idempotency. Do not ship this as an answer bot.
  */
-import { Keypair, Pubky, PublicKey } from "@synonymdev/pubky";
+import { Keypair, type Session } from "@synonymdev/pubky";
 import { PubkyAppPostKind, PubkySpecsBuilder } from "pubky-app-specs";
 import type { BotAdapter, ContractEnv, DebugLastContext } from "../adapter.js";
+import { openSession } from "../harness/sdk.js";
 import { extractPubkey, parsePostUri } from "../uri.js";
 import type { NexusNotification, NexusPostView } from "../nexus-types.js";
 
@@ -21,11 +22,8 @@ export class ReferenceAdapter implements BotAdapter {
   private repliesByRoot = new Map<string, number>();
   private inFlight = new Set<string>();
   private lastContext: DebugLastContext | undefined;
-  private session: Awaited<ReturnType<ReturnType<Pubky["signer"]>["signup"]>> | null = null;
-  private pubky: Pubky | null = null;
+  private session: Session | null = null;
   private botPk = "";
-  private cookie = "";
-  private fallbackUrl: string | null = null;
   private pollGeneration = 0;
 
   debugLastContext(): DebugLastContext | undefined {
@@ -39,28 +37,12 @@ export class ReferenceAdapter implements BotAdapter {
     const secret = Buffer.from(env.secretKeyHex, "hex");
     const keypair = Keypair.fromSecret(secret);
     this.botPk = keypair.publicKey.z32();
-    const { readRuntime } = await import("../harness/runtime.js");
-    const runtime = readRuntime();
-    this.fallbackUrl = runtime?.mode === "fallback-http" ? runtime.fallbackUrl ?? null : null;
-    if (this.fallbackUrl) {
-      const res = await fetch(`${this.fallbackUrl}/signup?signup_token=${encodeURIComponent(env.signupToken)}`, {
-        method: "POST",
-        headers: { "x-pubky-user": this.botPk },
-      });
-      const set = res.headers.get("set-cookie") ?? "";
-      const m = /session=([^;]+)/.exec(set);
-      this.cookie = m?.[1] ?? "";
-      this.session = null;
-    } else {
-      this.pubky = Pubky.testnet();
-      const signer = this.pubky.signer(keypair);
-      const hs = PublicKey.from(env.homeserverPk);
-      try {
-        this.session = await signer.signup(hs, env.signupToken);
-      } catch {
-        this.session = await signer.signin();
-      }
-    }
+    this.session = await openSession({
+      testnet: env.testnet,
+      secretKeyHex: env.secretKeyHex,
+      homeserverPk: env.homeserverPk,
+      signupToken: env.signupToken,
+    });
     this.schedule(0);
   }
 
@@ -89,10 +71,7 @@ export class ReferenceAdapter implements BotAdapter {
     if (this.stopped || !this.env) return;
     const gen = this.pollGeneration;
     try {
-      const url = new URL(
-        `/v0/user/${this.botPk}/notifications`,
-        this.env.nexusUrl,
-      );
+      const url = new URL(`/v0/user/${this.botPk}/notifications`, this.env.nexusUrl);
       url.searchParams.set("limit", "20");
       if (this.lastPolledTimestamp > 0) {
         url.searchParams.set("end", String(this.lastPolledTimestamp));
@@ -183,10 +162,7 @@ export class ReferenceAdapter implements BotAdapter {
     } catch {
       return null;
     }
-    const url = new URL(
-      `/v0/post/${parsed.author}/${parsed.postId}`,
-      this.env!.nexusUrl,
-    );
+    const url = new URL(`/v0/post/${parsed.author}/${parsed.postId}`, this.env!.nexusUrl);
     const res = await fetch(url);
     if (res.status === 404) return null;
     if (!res.ok) throw new Error(`post ${res.status}`);
@@ -218,28 +194,12 @@ export class ReferenceAdapter implements BotAdapter {
   }
 
   private async publish(parentUri: string): Promise<void> {
-    if (!this.env) throw new Error("not started");
+    if (!this.session || !this.env) throw new Error("not started");
     const specs = new PubkySpecsBuilder(this.botPk);
     const content = this.env.cannedReply;
-    const kind =
-      content.length > 2000 ? PubkyAppPostKind.Long : PubkyAppPostKind.Short;
+    const kind = content.length > 2000 ? PubkyAppPostKind.Long : PubkyAppPostKind.Short;
     const { post, meta } = specs.createPost(content, kind, parentUri, null, null);
-    const json = post.toJson();
-    if (this.fallbackUrl) {
-      const res = await fetch(`${this.fallbackUrl}${meta.path}`, {
-        method: "PUT",
-        headers: {
-          "content-type": "application/json",
-          cookie: `session=${this.cookie}`,
-          "x-pubky-user": this.botPk,
-        },
-        body: JSON.stringify(json),
-      });
-      if (!res.ok) throw new Error(`fallback put ${res.status}`);
-      return;
-    }
-    if (!this.session) throw new Error("not started");
-    await this.session.storage.putJson(meta.path as never, json);
+    await this.session.storage.putJson(meta.path as never, post.toJson());
   }
 }
 

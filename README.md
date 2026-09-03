@@ -2,54 +2,68 @@
 
 Implementation-independent **behavioral contract** for Pubky answer bots (working name **Jeb**).
 
-It does not implement a product bot. It starts a fixture Nexus, signs a test key up on a local `pubky-testnet` homeserver, drives any adapter that implements `start`/`stop`, and asserts publish behavior by reading `/pub/pubky.app/posts/*` back through `@synonymdev/pubky`.
+It starts a fixture Nexus, signs a test key up on a **real** homeserver, drives any adapter that implements `start`/`stop`, and asserts publish behavior by reading `/pub/pubky.app/posts/*` back through `@synonymdev/pubky`. Bots **must** publish with the real SDK (`session.storage.putJson`). There is no fake homeserver protocol.
 
 The tree includes `src/reference-adapter/` — a deliberately tiny poll-and-publish bot whose **only purpose is to prove this harness**. It is test infrastructure, not an answer bot.
 
-## Requirements
+## Homeserver modes
 
-- Node ≥ 20
-- Docker (Postgres for pubky-testnet) and a Rust toolchain with the `pubky-core` checkout at `/Volumes/vibedrive/vibes-dev/pubky-core`
-- No API keys. Staging Nexus is used only by `npm run record-fixtures` (read-only).
+| Mode | When | SDK client |
+| --- | --- | --- |
+| `pubky-testnet` | Static local testnet (ports 6881 / 15411 / 15412 / 6288 free, release binary, Postgres) | `Pubky.testnet()` — `env.testnet === true` |
+| `staging` | `CONTRACT_HOMESERVER=staging` or auto-selected when testnet is unavailable and `CONTRACT_STAGING_ADMIN_PASSWORD` is set | `new Pubky()` — `env.testnet === false` |
 
-## How to run pubky-testnet
+Selection if `CONTRACT_HOMESERVER` is unset: probe static ports and prereqs → testnet; else staging if the admin password env is set; otherwise **fail fast** (no silent fake).
 
-Homeserver public key (static testnet): `8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo`  
-Admin (signup tokens): `http://127.0.0.1:6288/generate_signup_token` with header `X-Admin-Password: admin`
+### Staging (required on this machine when UDP 6881 is taken)
 
 ```bash
-# Dedicated Postgres (ephemeral DBs; pubky-testnet adds ?pubky-test=true semantics via TEST_PUBKY_CONNECTION_STRING)
-docker run -d --name jeb-contract-pg \
-  -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=postgres \
-  -p 55435:5432 postgres:18-alpine
-
-export TEST_PUBKY_CONNECTION_STRING='postgres://postgres:postgres@127.0.0.1:55435/postgres'
-
-cd /Volumes/vibedrive/vibes-dev/pubky-core
-cargo run -p pubky-testnet --release
+CONTRACT_HOMESERVER=staging \
+CONTRACT_STAGING_ADMIN_PASSWORD="$(cat /tmp/jeb-staging-admin.pw)" \
+npm test
 ```
 
-Prepare a real testnet **before** `npm test` with `scripts/start-testnet.sh` (builds the release binary if needed and execs it). `npm test` never runs `cargo build` / `cargo run`. It only execs `target/release/pubky-testnet` when:
+- Homeserver pubky: `ufibwbmed6jeq9k4p583go95wofakh9fwpp4k734trq79pd9u1uy`
+- Admin: `GET https://admin.homeserver.staging.pubky.app/generate_signup_token` with `X-Admin-Password`
+- The harness mints one single-use token per **new** key (lazily; already-registered keys sign in)
+- **Caveat:** runs create throwaway accounts and posts on staging. Teardown best-effort `DELETE`s posts the bot published. Accounts remain (no delete-account API).
 
-1. Admin is not already up on `:6288`
-2. A bind probe shows **6881 / 15411 / 15412 / 6288** all free
-3. The release binary already exists
-4. Postgres is reachable (`TEST_PUBKY_CONNECTION_STRING` or `127.0.0.1:55435`)
+Never put the admin password or minted tokens in git, logs, or runtime JSON.
 
-Otherwise it goes straight to the in-process fallback homeserver (no spawn). If it does spawn, wait is capped by `CONTRACT_TESTNET_TIMEOUT_MS` (default 90000) with a stderr line every 10s. A failed spawn kills the **whole process group** (embedded PostgreSQL included) on timeout, teardown, SIGINT, and SIGTERM.
+The first-PUT-fails-then-retries case is **dropped**. `@synonymdev/pubky` issues homeserver PUTs through native/WASM HTTP (not injectable `globalThis.fetch`), and the SDK has no `homeserverProxyUrl` / custom base. A fetch interceptor neither fails the real PUT nor is a supported product hook.
 
-Per-run isolation: fixture Nexus and fallback homeserver bind port 0. Runtime state is a temp file (`JEB_CONTRACT_RUNTIME`, printed at setup) so two concurrent `CONTRACT_ADAPTER=… npm test` processes do not share ports or `harness-runtime.json`.
+### Local pubky-testnet
+
+Homeserver: `8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo`  
+Admin: `http://127.0.0.1:6288/generate_signup_token` (`X-Admin-Password: admin`)
+
+```bash
+bash scripts/start-testnet.sh
+```
+
+`npm test` never runs `cargo`. It only execs `target/release/pubky-testnet` when ports are free. Spawn wait is `CONTRACT_TESTNET_TIMEOUT_MS` (default 90000) with a stderr line every 10s. A failed spawn kills the process group.
 
 ## Implement an adapter
 
+Publish **only** via `@synonymdev/pubky`. Use `env.testnet` to pick the client. Do not read harness runtime files.
+
 ```ts
+import { Pubky, Keypair, PublicKey } from "@synonymdev/pubky";
 import type { BotAdapter, ContractEnv } from "jeb-contract";
 
 export default class MyBot implements BotAdapter {
-  async start(env: ContractEnv): Promise<void> { /* poll env.nexusUrl, sign in, reply */ }
-  async stop(): Promise<void> { /* halt polling */ }
-  // optional:
-  debugLastContext() { return { ancestors: [] }; }
+  async start(env: ContractEnv): Promise<void> {
+    const pubky = env.testnet ? Pubky.testnet() : new Pubky();
+    const signer = pubky.signer(Keypair.fromSecret(Buffer.from(env.secretKeyHex, "hex")));
+    const hs = PublicKey.from(env.homeserverPk);
+    try {
+      await signer.signin();
+    } catch {
+      await signer.signup(hs, env.signupToken);
+    }
+    // poll env.nexusUrl, reply with session.storage.putJson(...)
+  }
+  async stop(): Promise<void> {}
 }
 ```
 
@@ -59,36 +73,24 @@ export default class MyBot implements BotAdapter {
 | --- | --- |
 | `nexusUrl` | Fixture Nexus base URL |
 | `homeserverPk` | z32 homeserver key |
-| `signupToken` | admin-minted invite |
+| `signupToken` | admin-minted invite (or a reuse placeholder if the key is already registered) |
 | `secretKeyHex` | 32-byte bot secret |
 | `pgUrl` | optional bot-owned Postgres |
 | `cannedReply` | text to publish instead of a model |
 | `modelDelayMs` | must delay that long before publish |
 | `maxRepliesPerThread` | cap per root thread (contract default 1) |
-
-Compile your adapter to ESM/CJS that Node can `import()`.
-
-## Run
-
-```bash
-cd /Volumes/vibedrive/vibes-dev/jeb-contract
-npm install
-npm test
-```
+| `testnet` | `true` → `Pubky.testnet()`, `false` → `new Pubky()` |
 
 Against another bot:
 
 ```bash
-CONTRACT_ADAPTER=/abs/path/to/adapter.js npm test
+CONTRACT_HOMESERVER=staging \
+CONTRACT_STAGING_ADMIN_PASSWORD="$(cat /tmp/jeb-staging-admin.pw)" \
+CONTRACT_ADAPTER=/abs/path/to/adapter.js \
+npm test
 ```
 
-The module must `export default class` implementing `BotAdapter`, or `export const adapter`, or `export class ReferenceAdapter`.
-
-Refresh staging shape fixtures (read-only):
-
-```bash
-npm run record-fixtures
-```
+Per-run isolation: fixture Nexus binds port 0; runtime JSON lives in a temp dir (`JEB_CONTRACT_RUNTIME`).
 
 ## Cases
 
@@ -100,8 +102,7 @@ npm run record-fixtures
 - **100 duplicate notifications**: exactly one reply.
 - **Self-mention**: no reply; later ordinary mention answered.
 - **Bot-to-bot loop**: no more than `maxRepliesPerThread` (default 1) in the same thread.
-- **modelDelayMs**: delay honored; a later mention still finishes within budget.
-- **Publish failure**: first PUT to `/pub/pubky.app/posts/` returns 5xx (fetch intercept); still exactly one reply after retry; later mention answered.
+- **modelDelayMs**: delay honored; a later mention still finishes within budget (staging budget 70s).
 - **Crash after publish**: stop immediately after the write, restart, no second reply; later mention answered.
 - **start/end re-delivery**: overlapping poll window, one reply.
 - **legacy `pk:` prefix**: mention post content uses `pk:{id}`; still replies.

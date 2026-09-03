@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { Pubky, Keypair } from "@synonymdev/pubky";
+import { Keypair, type Session } from "@synonymdev/pubky";
 import { expect } from "vitest";
 import type { BotAdapter, ContractEnv } from "../src/adapter.js";
 import {
@@ -9,14 +9,20 @@ import {
   makeUserView,
   mentionNotification,
 } from "../src/fixture-nexus/index.js";
-import { fetchSignupToken, HomeserverObserver, type ListedPost } from "../src/homeserver/observer.js";
+import { HomeserverObserver, type ListedPost } from "../src/homeserver/observer.js";
 import { loadAdapter } from "../src/harness/load-adapter.js";
 import { validatePubkyAppPost } from "../src/harness/validate-post.js";
-import { postUri } from "../src/uri.js";
+import { mintSignupToken } from "../src/harness/signup.js";
+import { openSession } from "../src/harness/sdk.js";
 import { readRuntime } from "../src/harness/runtime.js";
+import { postUri } from "../src/uri.js";
+
+function runId(): string {
+  return process.env.JEB_CONTRACT_RUN_ID ?? "run";
+}
 
 export function secretHexFor(label: string): string {
-  return createHash("sha256").update(`jeb-contract:${label}`).digest("hex");
+  return createHash("sha256").update(`jeb-contract:${runId()}:${label}`).digest("hex");
 }
 
 export function publicKeyFor(secretHex: string): string {
@@ -27,21 +33,52 @@ export function runtimeMode(): string {
   return readRuntime()?.mode ?? "unknown";
 }
 
-export async function requireTestnet(): Promise<void> {
+export function isStaging(): boolean {
+  return readRuntime()?.mode === "staging";
+}
+
+function replyWaitMs(): number {
+  return isStaging() ? 60_000 : 12_000;
+}
+
+function quietMsDefault(): number {
+  return isStaging() ? 5_000 : 400;
+}
+
+interface SuiteBot {
+  secret: string;
+  pk: string;
+  token: string;
+  cleanup: Session;
+}
+
+let suiteBot: SuiteBot | null = null;
+
+export async function ensureSuiteBot(): Promise<SuiteBot> {
+  if (suiteBot) return suiteBot;
   const runtime = readRuntime();
-  if (runtime?.mode === "fallback-http" && runtime.fallbackUrl) return;
-  const tokenProbe = await fetchSignupToken().catch((e: unknown) => e);
-  if (tokenProbe instanceof Error) {
-    throw new Error(
-      `pubky-testnet admin is not reachable; contract tests need a homeserver. ${tokenProbe.message}`,
-    );
-  }
+  if (!runtime) throw new Error("harness runtime missing");
+  const secret = secretHexFor("suite-bot");
+  const pk = publicKeyFor(secret);
+  const token = await mintSignupToken();
+  const session = await openSession({
+    testnet: runtime.testnet,
+    secretKeyHex: secret,
+    homeserverPk: runtime.homeserverPk,
+    signupToken: token,
+    timeoutMs: 30_000,
+  });
+  const observer = new HomeserverObserver(runtime.testnet, pk);
+  await observer.waitUntilResolvable(30_000);
+  suiteBot = { secret, pk, token, cleanup: session };
+  return suiteBot;
 }
 
 export interface World {
   nexus: FixtureNexus;
   adapter: BotAdapter;
   observer: HomeserverObserver;
+  cleanupSession: Session | null;
   botPk: string;
   otherPk: string;
   botSecret: string;
@@ -56,28 +93,28 @@ export async function startWorld(opts: {
   modelDelayMs?: number;
   maxRepliesPerThread?: number;
 }): Promise<World> {
-  await requireTestnet();
+  const runtime = readRuntime();
+  if (!runtime) throw new Error("harness runtime missing");
+  const suite = await ensureSuiteBot();
   const nexus = new FixtureNexus();
   await nexus.listen();
-  const botSecret = secretHexFor(`${opts.name}:bot`);
+  const botSecret = suite.secret;
   const otherSecret = secretHexFor(`${opts.name}:other`);
-  const botPk = publicKeyFor(botSecret);
+  const botPk = suite.pk;
   const otherPk = publicKeyFor(otherSecret);
-  const token = await fetchSignupToken();
-  const runtime = readRuntime();
-  const sdk = runtime?.mode === "fallback-http" ? null : Pubky.testnet();
+  const observer = new HomeserverObserver(runtime.testnet, botPk);
 
   const env: ContractEnv = {
     nexusUrl: nexus.baseUrl,
-    homeserverPk: "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo",
-    signupToken: token,
+    homeserverPk: runtime.homeserverPk,
+    signupToken: suite.token,
     secretKeyHex: botSecret,
     cannedReply: opts.cannedReply ?? `canned:${opts.name}`,
     modelDelayMs: opts.modelDelayMs ?? 0,
     maxRepliesPerThread: opts.maxRepliesPerThread ?? 1,
+    testnet: runtime.testnet,
   };
   const adapter = await loadAdapter();
-  const observer = new HomeserverObserver(sdk, botPk);
   nexus.setUser(makeUserView(botPk, "Jeb"));
   nexus.setUser(makeUserView(otherPk, "OtherBot"));
   await adapter.start(env);
@@ -85,6 +122,7 @@ export async function startWorld(opts: {
     nexus,
     adapter,
     observer,
+    cleanupSession: suite.cleanup,
     botPk,
     otherPk,
     botSecret,
@@ -96,6 +134,15 @@ export async function startWorld(opts: {
 
 export async function stopWorld(world: World): Promise<void> {
   await world.adapter.stop();
+  if (world.cleanupSession) {
+    const deadline = Date.now() + (isStaging() ? 15_000 : 2_000);
+    while (Date.now() < deadline) {
+      await world.observer.deletePosts(world.cleanupSession);
+      const left = await world.observer.listPosts();
+      if (left.length === 0) break;
+      await new Promise((r) => setTimeout(r, 400));
+    }
+  }
   await world.nexus.close();
 }
 
@@ -151,7 +198,7 @@ export function seedMention(
 export async function waitReplies(
   world: World,
   count: number,
-  timeoutMs = 12_000,
+  timeoutMs = replyWaitMs(),
 ): Promise<ListedPost[]> {
   return world.observer.waitForPostCount((p) => p.length >= count, timeoutMs);
 }
@@ -172,12 +219,12 @@ export function expectOneValidReply(posts: ListedPost[], parent: string, canned:
 export async function expectStableCount(
   world: World,
   count: number,
-  quietMs = 400,
+  quietMs = quietMsDefault(),
 ): Promise<ListedPost[]> {
   const start = Date.now();
   let last = await world.observer.listPosts();
   while (Date.now() - start < quietMs) {
-    await new Promise((r) => setTimeout(r, 80));
+    await new Promise((r) => setTimeout(r, 150));
     last = await world.observer.listPosts();
   }
   expect(last.length).toBe(count);

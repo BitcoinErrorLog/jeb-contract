@@ -1,18 +1,17 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { ChildProcess } from "node:child_process";
-import { FallbackHomeserver } from "../homeserver/fallback.js";
 import { writeRuntime, type HarnessRuntime } from "./runtime.js";
 import { canConnectTcp, probeStaticTestnetPorts } from "./ports.js";
 import { killProcessGroup, spawnProcessGroup } from "./process-group.js";
+import { STAGING_ADMIN_URL, STAGING_HOMESERVER_PK, STATIC_TESTNET_HOMESERVER_PK } from "../uri.js";
 
 const CORE = "/Volumes/vibedrive/vibes-dev/pubky-core";
-const HOMESERVER_PK = "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo";
 const DEFAULT_TIMEOUT_MS = 90_000;
+const TESTNET_ADMIN_URL = "http://127.0.0.1:6288/generate_signup_token";
 
 let child: ChildProcess | null = null;
 let childPid = 0;
-let fallback: FallbackHomeserver | null = null;
 let signalsInstalled = false;
 
 function timeoutMs(): number {
@@ -29,12 +28,27 @@ function pgUrl(): string {
   );
 }
 
-async function waitForAdmin(host: string, timeout: number, label: string): Promise<boolean> {
+function failFastNoHomeserver(detail: string): never {
+  throw new Error(
+    [
+      "No real homeserver available for jeb-contract.",
+      detail,
+      "",
+      "Choose one:",
+      "  1) Local static pubky-testnet — free ports 6881/15411/15412/6288, release binary, Postgres.",
+      "     Prepare with scripts/start-testnet.sh, or set CONTRACT_HOMESERVER=pubky-testnet.",
+      "  2) Staging homeserver — CONTRACT_HOMESERVER=staging and CONTRACT_STAGING_ADMIN_PASSWORD.",
+      "There is no in-process fake homeserver.",
+    ].join("\n"),
+  );
+}
+
+async function waitForAdmin(url: string, timeout: number, label: string): Promise<boolean> {
   const start = Date.now();
   let lastBeat = start;
   while (Date.now() - start < timeout) {
     try {
-      const res = await fetch(`http://${host}/generate_signup_token`, {
+      const res = await fetch(url, {
         headers: { "X-Admin-Password": "admin" },
       });
       if (res.ok || res.status === 401 || res.status === 403) return true;
@@ -47,7 +61,7 @@ async function waitForAdmin(host: string, timeout: number, label: string): Promi
     if (now - lastBeat >= 10_000) {
       lastBeat = now;
       process.stderr.write(
-        `[jeb-contract] ${label} still waiting for admin on ${host} (${Math.round((now - start) / 1000)}s / ${timeout}ms)\n`,
+        `[jeb-contract] ${label} still waiting (${Math.round((now - start) / 1000)}s / ${timeout}ms)\n`,
       );
     }
     await new Promise((r) => setTimeout(r, 250));
@@ -66,9 +80,7 @@ function installSignalHandlers(): void {
   if (signalsInstalled) return;
   signalsInstalled = true;
   const onSignal = () => {
-    void killSpawnedTestnet().finally(() => {
-      if (fallback) void fallback.close();
-    });
+    void killSpawnedTestnet();
   };
   process.on("SIGINT", onSignal);
   process.on("SIGTERM", onSignal);
@@ -91,118 +103,88 @@ async function postgresReady(): Promise<boolean> {
   return canConnectTcp("127.0.0.1", 55435);
 }
 
-function fallbackRuntime(fallbackUrl: string, reason: string): HarnessRuntime {
+function writeTestnetRuntime(): HarnessRuntime {
   const r: HarnessRuntime = {
-    mode: "fallback-http",
-    homeserverPk: HOMESERVER_PK,
-    adminHost: "127.0.0.1:6288",
+    mode: "pubky-testnet",
+    homeserverPk: STATIC_TESTNET_HOMESERVER_PK,
+    adminUrl: TESTNET_ADMIN_URL,
     pgUrl: pgUrl(),
-    fallbackUrl,
-    fallbackReason: reason,
+    testnet: true,
   };
   writeRuntime(r);
-  process.stderr.write(`[jeb-contract] using fallback homeserver (${reason.split("\n")[0]})\n`);
+  process.stderr.write("[jeb-contract] homeserver mode=pubky-testnet\n");
   return r;
 }
 
-export async function startPubkyTestnet(): Promise<HarnessRuntime> {
-  installSignalHandlers();
-  fallback = new FallbackHomeserver();
-  const fallbackUrl = await fallback.listen();
-
-  const already = await waitForAdmin("127.0.0.1:6288", 400, "probe existing");
-  if (already) {
-    const r: HarnessRuntime = {
-      mode: "pubky-testnet",
-      homeserverPk: HOMESERVER_PK,
-      adminHost: "127.0.0.1:6288",
-      pgUrl: pgUrl(),
-      fallbackUrl,
-    };
-    writeRuntime(r);
-    process.stderr.write("[jeb-contract] using already-running pubky-testnet on :6288\n");
-    return r;
+function writeStagingRuntime(): HarnessRuntime {
+  if (!process.env.CONTRACT_STAGING_ADMIN_PASSWORD) {
+    failFastNoHomeserver("CONTRACT_STAGING_ADMIN_PASSWORD is unset.");
   }
+  const r: HarnessRuntime = {
+    mode: "staging",
+    homeserverPk: STAGING_HOMESERVER_PK,
+    adminUrl: STAGING_ADMIN_URL,
+    pgUrl: pgUrl(),
+    testnet: false,
+  };
+  writeRuntime(r);
+  process.stderr.write(
+    "[jeb-contract] homeserver mode=staging (creates throwaway accounts/posts on staging.pubky.app)\n",
+  );
+  return r;
+}
+
+async function tryStartLocalTestnet(): Promise<HarnessRuntime | null> {
+  const already = await waitForAdmin(TESTNET_ADMIN_URL, 400, "probe existing");
+  if (already) return writeTestnetRuntime();
 
   const ports = await probeStaticTestnetPorts();
-  if (!ports.free) {
-    return fallbackRuntime(
-      fallbackUrl,
-      `Static testnet ports already taken (${ports.blocked.join(", ")}); not spawning pubky-testnet.`,
-    );
-  }
+  if (!ports.free) return null;
 
   const bin = testnetBinary();
-  if (!existsSync(bin)) {
-    if (process.env.CONTRACT_BUILD_TESTNET === "1") {
-      process.stderr.write(
-        "[jeb-contract] CONTRACT_BUILD_TESTNET=1 but npm test still will not cargo-build; run scripts/start-testnet.sh first.\n",
-      );
-    }
-    return fallbackRuntime(
-      fallbackUrl,
-      `No prebuilt binary at ${bin}. Prepare one with scripts/start-testnet.sh (npm test never runs cargo unless you start testnet yourself).`,
-    );
-  }
+  if (!existsSync(bin)) return null;
+  if (!(await postgresReady())) return null;
 
-  if (!(await postgresReady())) {
-    return fallbackRuntime(
-      fallbackUrl,
-      "Postgres prerequisite missing (set TEST_PUBKY_CONNECTION_STRING or start Docker via scripts/start-testnet.sh).",
-    );
-  }
-
-  const env = {
-    ...process.env,
-    TEST_PUBKY_CONNECTION_STRING: pgUrl(),
-  };
   process.stderr.write(`[jeb-contract] spawning ${bin} (timeout ${timeoutMs()}ms)\n`);
   child = spawnProcessGroup(bin, [], {
     cwd: CORE,
-    env,
+    env: { ...process.env, TEST_PUBKY_CONNECTION_STRING: pgUrl() },
   });
   childPid = child.pid ?? 0;
-  let log = "";
-  child.stdout?.on("data", (b: Buffer) => {
-    log += b.toString();
-  });
-  child.stderr?.on("data", (b: Buffer) => {
-    log += b.toString();
-  });
-  child.once("exit", (code, signal) => {
-    log += `\n[exit code=${code} signal=${signal}]\n`;
-  });
-
-  const up = await waitForAdmin("127.0.0.1:6288", timeoutMs(), "spawned testnet");
-  if (up) {
-    const r: HarnessRuntime = {
-      mode: "pubky-testnet",
-      homeserverPk: HOMESERVER_PK,
-      adminHost: "127.0.0.1:6288",
-      pgUrl: pgUrl(),
-      fallbackUrl,
-    };
-    writeRuntime(r);
-    return r;
-  }
-
+  const up = await waitForAdmin(TESTNET_ADMIN_URL, timeoutMs(), "spawned testnet");
+  if (up) return writeTestnetRuntime();
   await killSpawnedTestnet();
-  return fallbackRuntime(
-    fallbackUrl,
-    [
-      `pubky-testnet did not become reachable on 127.0.0.1:6288 within ${timeoutMs()}ms.`,
-      "Process group killed.",
-      "Last log excerpt:\n" + log.slice(-4000),
-    ].join("\n"),
-  );
+  return null;
 }
 
-export async function stopPubkyTestnet(): Promise<void> {
-  await killSpawnedTestnet();
-  if (fallback) {
-    await fallback.close();
-    fallback = null;
+export async function startHomeserver(): Promise<HarnessRuntime> {
+  installSignalHandlers();
+  const requested = (process.env.CONTRACT_HOMESERVER ?? "").trim().toLowerCase();
+
+  if (requested === "staging") {
+    return writeStagingRuntime();
   }
+
+  if (requested === "pubky-testnet" || requested === "testnet") {
+    const local = await tryStartLocalTestnet();
+    if (local) return local;
+    failFastNoHomeserver("CONTRACT_HOMESERVER=pubky-testnet but the static testnet is not reachable.");
+  }
+
+  if (requested && requested !== "") {
+    failFastNoHomeserver(`Unknown CONTRACT_HOMESERVER=${requested}`);
+  }
+
+  const local = await tryStartLocalTestnet();
+  if (local) return local;
+  if (process.env.CONTRACT_STAGING_ADMIN_PASSWORD) {
+    return writeStagingRuntime();
+  }
+  failFastNoHomeserver("Static testnet ports/prereqs unavailable and no staging password.");
+}
+
+export async function stopHomeserver(): Promise<void> {
+  await killSpawnedTestnet();
 }
 
 export default async function globalSetup(ctx?: {
@@ -211,12 +193,12 @@ export default async function globalSetup(ctx?: {
   if (!process.env.JEB_CONTRACT_RUNTIME) {
     const { mkdtempSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
-    const { join } = await import("node:path");
-    process.env.JEB_CONTRACT_RUNTIME = join(mkdtempSync(join(tmpdir(), "jeb-contract-")), "runtime.json");
+    const { join: j } = await import("node:path");
+    process.env.JEB_CONTRACT_RUNTIME = j(mkdtempSync(j(tmpdir(), "jeb-contract-")), "runtime.json");
   }
   ctx?.provide("jebRuntimePath", process.env.JEB_CONTRACT_RUNTIME);
-  await startPubkyTestnet();
+  await startHomeserver();
   return async () => {
-    await stopPubkyTestnet();
+    await stopHomeserver();
   };
 }

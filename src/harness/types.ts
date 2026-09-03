@@ -1,8 +1,9 @@
+export type HomeserverMode = "pubky-testnet" | "staging";
+
 export interface HarnessRuntime {
-  mode: "pubky-testnet" | "fallback-http";
+  mode: HomeserverMode;
   homeserverPk: string;
-  adminHost: string;
+  adminUrl: string;
   pgUrl: string;
-  fallbackUrl?: string;
-  fallbackReason?: string;
+  testnet: boolean;
 }

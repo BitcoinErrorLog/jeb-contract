@@ -1,6 +1,6 @@
-import { Pubky, Keypair, PublicKey, type Session } from "@synonymdev/pubky";
-import { STATIC_TESTNET_HOMESERVER_PK, POSTS_PATH_PREFIX } from "../uri.js";
-import { readRuntime } from "../harness/runtime.js";
+import type { Session } from "@synonymdev/pubky";
+import { POSTS_PATH_PREFIX } from "../uri.js";
+import { createPubky } from "../harness/sdk.js";
 
 export interface ListedPost {
   path: string;
@@ -11,34 +11,35 @@ export interface ListedPost {
 
 export class HomeserverObserver {
   constructor(
-    private readonly sdk: Pubky | null,
+    private readonly testnet: boolean,
     private readonly botPublicKey: string,
   ) {}
 
+  private sdk() {
+    return createPubky(this.testnet);
+  }
+
+  listAddress(): string {
+    return `pubky${this.botPublicKey}${POSTS_PATH_PREFIX}`;
+  }
+
   async listPosts(): Promise<ListedPost[]> {
-    const runtime = readRuntime();
-    if (runtime?.mode === "fallback-http" && runtime.fallbackUrl) {
-      return listFromFallback(runtime.fallbackUrl, this.botPublicKey);
-    }
-    if (!this.sdk) return [];
-    const addr = `pubky${this.botPublicKey}${POSTS_PATH_PREFIX}`;
+    const sdk = this.sdk();
+    const addr = this.listAddress();
     let listed: unknown;
     try {
-      listed = await this.sdk.publicStorage.list(addr as never, null, false, 1000, false);
+      listed = await sdk.publicStorage.list(addr as never, null, false, 1000, false);
     } catch {
       listed = [];
     }
     const urls = normalizeList(listed);
-    if (urls.length === 0 && runtime?.fallbackUrl) {
-      return listFromFallback(runtime.fallbackUrl, this.botPublicKey);
-    }
     const out: ListedPost[] = [];
     for (const url of urls) {
       const id = url.split("/").filter(Boolean).pop();
       if (!id) continue;
       let json: Record<string, unknown> = {};
       try {
-        const got = await this.sdk.publicStorage.getJson(url as never);
+        const got = await sdk.publicStorage.getJson(asGetAddr(url, this.botPublicKey, id));
         if (got && typeof got === "object") json = got as Record<string, unknown>;
       } catch {
         continue;
@@ -53,10 +54,23 @@ export class HomeserverObserver {
     return out;
   }
 
+  async waitUntilResolvable(timeoutMs = 30_000): Promise<boolean> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      try {
+        await this.sdk().publicStorage.list(this.listAddress() as never, null, false, 10, false);
+        return true;
+      } catch {
+        await new Promise((r) => setTimeout(r, 400));
+      }
+    }
+    return false;
+  }
+
   async waitForPostCount(
     predicate: (posts: ListedPost[]) => boolean,
     timeoutMs: number,
-    pollMs = 80,
+    pollMs = 250,
   ): Promise<ListedPost[]> {
     const start = Date.now();
     let last: ListedPost[] = [];
@@ -67,31 +81,22 @@ export class HomeserverObserver {
     }
     return last;
   }
+
+  async deletePosts(session: Session): Promise<void> {
+    const posts = await this.listPosts();
+    for (const p of posts) {
+      try {
+        await session.storage.delete(p.path as never);
+      } catch {
+        // best-effort cleanup
+      }
+    }
+  }
 }
 
-async function listFromFallback(baseUrl: string, botPk: string): Promise<ListedPost[]> {
-  const res = await fetch(`${baseUrl}${POSTS_PATH_PREFIX}`, {
-    headers: { "x-pubky-user": botPk },
-  });
-  if (!res.ok) return [];
-  const urls = normalizeList(await res.json());
-  const out: ListedPost[] = [];
-  for (const url of urls) {
-    const id = url.split("/").filter(Boolean).pop();
-    if (!id) continue;
-    const got = await fetch(`${baseUrl}${POSTS_PATH_PREFIX}${id}`, {
-      headers: { "x-pubky-user": botPk },
-    });
-    if (!got.ok) continue;
-    const json = (await got.json()) as Record<string, unknown>;
-    out.push({
-      path: `${POSTS_PATH_PREFIX}${id}`,
-      id,
-      uri: `pubky://${botPk}${POSTS_PATH_PREFIX}${id}`,
-      json,
-    });
-  }
-  return out;
+function asGetAddr(url: string, botPk: string, id: string): never {
+  if (url.startsWith("pubky://") || url.startsWith("pubky")) return url as never;
+  return `pubky://${botPk}${POSTS_PATH_PREFIX}${id}` as never;
 }
 
 function normalizeList(listed: unknown): string[] {
@@ -104,50 +109,4 @@ function normalizeList(listed: unknown): string[] {
     });
   }
   return [];
-}
-
-export async function signupWithToken(
-  sdk: Pubky,
-  secretKeyHex: string,
-  signupToken: string,
-  homeserverPk = STATIC_TESTNET_HOMESERVER_PK,
-): Promise<{ session: Session; publicKey: string; keypair: Keypair }> {
-  const raw = Buffer.from(secretKeyHex, "hex");
-  if (raw.length !== 32) throw new Error(`secretKeyHex must be 32 bytes, got ${raw.length}`);
-  const keypair = Keypair.fromSecret(raw);
-  const signer = sdk.signer(keypair);
-  const homeserver = PublicKey.from(homeserverPk);
-  let session: Session;
-  try {
-    session = await signer.signup(homeserver, signupToken);
-  } catch {
-    session = await signer.signin();
-  }
-  return { session, publicKey: keypair.publicKey.z32(), keypair };
-}
-
-export async function fetchSignupToken(
-  adminHost = "127.0.0.1:6288",
-  adminPassword = "admin",
-): Promise<string> {
-  const runtime = readRuntime();
-  const hosts = [adminHost];
-  if (runtime?.fallbackUrl) {
-    hosts.push(runtime.fallbackUrl.replace(/^https?:\/\//, ""));
-  }
-  let last = "no hosts";
-  for (const host of hosts) {
-    try {
-      const res = await fetch(`http://${host}/generate_signup_token`, {
-        headers: { "X-Admin-Password": adminPassword },
-      });
-      const body = await res.text();
-      if (res.ok) return body.trim();
-      last = `${res.status} ${body}`;
-    } catch (e) {
-      last = String(e);
-    }
-  }
-  if (runtime?.mode === "fallback-http") return "fallback-token";
-  throw new Error(`signup token failed: ${last}`);
 }

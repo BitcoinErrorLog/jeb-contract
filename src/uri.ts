@@ -3,6 +3,12 @@ export const POSTS_PATH_PREFIX = "/pub/pubky.app/posts/";
 export const STATIC_TESTNET_HOMESERVER_PK =
   "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo";
 
+export const STAGING_HOMESERVER_PK =
+  "ufibwbmed6jeq9k4p583go95wofakh9fwpp4k734trq79pd9u1uy";
+
+export const STAGING_ADMIN_URL =
+  "https://admin.homeserver.staging.pubky.app/generate_signup_token";
+
 export function parsePostUri(uri: string): { author: string; postId: string } {
   const m = /^pubky:\/\/([a-z0-9]{52})\/pub\/pubky\.app\/posts\/([A-Z0-9]{13})$/i.exec(
     uri.trim(),

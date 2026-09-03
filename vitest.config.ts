@@ -7,6 +7,9 @@ if (!process.env.JEB_CONTRACT_RUNTIME) {
   const dir = mkdtempSync(join(tmpdir(), "jeb-contract-"));
   process.env.JEB_CONTRACT_RUNTIME = join(dir, "runtime.json");
 }
+if (!process.env.JEB_CONTRACT_RUN_ID) {
+  process.env.JEB_CONTRACT_RUN_ID = process.env.JEB_CONTRACT_RUNTIME.replace(/[^A-Za-z0-9]+/g, "").slice(-12);
+}
 
 export default defineConfig({
   test: {
@@ -16,13 +19,14 @@ export default defineConfig({
     exclude: ["**/._*", "node_modules/**"],
     fileParallelism: false,
     sequence: { concurrent: false },
-    testTimeout: 45_000,
-    hookTimeout: 120_000,
+    testTimeout: 180_000,
+    hookTimeout: 180_000,
     globalSetup: ["./src/harness/global-setup.ts"],
-    setupFiles: ["./src/harness/inject-runtime.ts", "./src/harness/put-fail.ts"],
+    setupFiles: ["./src/harness/inject-runtime.ts"],
     pool: "forks",
     env: {
       JEB_CONTRACT_RUNTIME: process.env.JEB_CONTRACT_RUNTIME,
+      JEB_CONTRACT_RUN_ID: process.env.JEB_CONTRACT_RUN_ID,
     },
   },
 });
