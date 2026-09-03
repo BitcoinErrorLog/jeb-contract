@@ -13,11 +13,7 @@ import { fetchSignupToken, HomeserverObserver, type ListedPost } from "../src/ho
 import { loadAdapter } from "../src/harness/load-adapter.js";
 import { validatePubkyAppPost } from "../src/harness/validate-post.js";
 import { postUri } from "../src/uri.js";
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+import { readRuntime } from "../src/harness/runtime.js";
 
 export function secretHexFor(label: string): string {
   return createHash("sha256").update(`jeb-contract:${label}`).digest("hex");
@@ -28,21 +24,12 @@ export function publicKeyFor(secretHex: string): string {
 }
 
 export function runtimeMode(): string {
-  try {
-    const j = JSON.parse(readFileSync(join(ROOT, "harness-runtime.json"), "utf8")) as {
-      mode: string;
-    };
-    return j.mode;
-  } catch {
-    return "unknown";
-  }
+  return readRuntime()?.mode ?? "unknown";
 }
 
 export async function requireTestnet(): Promise<void> {
-  const runtime = JSON.parse(
-    readFileSync(join(ROOT, "harness-runtime.json"), "utf8"),
-  ) as { mode?: string; fallbackUrl?: string };
-  if (runtime.mode === "fallback-http" && runtime.fallbackUrl) return;
+  const runtime = readRuntime();
+  if (runtime?.mode === "fallback-http" && runtime.fallbackUrl) return;
   const tokenProbe = await fetchSignupToken().catch((e: unknown) => e);
   if (tokenProbe instanceof Error) {
     throw new Error(
@@ -77,10 +64,8 @@ export async function startWorld(opts: {
   const botPk = publicKeyFor(botSecret);
   const otherPk = publicKeyFor(otherSecret);
   const token = await fetchSignupToken();
-  const runtime = JSON.parse(readFileSync(join(ROOT, "harness-runtime.json"), "utf8")) as {
-    mode?: string;
-  };
-  const sdk = runtime.mode === "fallback-http" ? null : Pubky.testnet();
+  const runtime = readRuntime();
+  const sdk = runtime?.mode === "fallback-http" ? null : Pubky.testnet();
 
   const env: ContractEnv = {
     nexusUrl: nexus.baseUrl,

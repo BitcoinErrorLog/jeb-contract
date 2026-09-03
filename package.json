@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "record-fixtures": "tsx scripts/record-fixtures.ts"
+    "record-fixtures": "tsx scripts/record-fixtures.ts",
+    "verify:orphans": "tsx scripts/verify-orphan-cleanup.ts"
   },
   "dependencies": {
     "@synonymdev/pubky": "^0.6.0-rc.6",

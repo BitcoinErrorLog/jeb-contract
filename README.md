@@ -29,9 +29,16 @@ cd /Volumes/vibedrive/vibes-dev/pubky-core
 cargo run -p pubky-testnet --release
 ```
 
-`npm test` also tries to spawn that binary from global setup if port 6288 is free. Leave a already-running testnet in place if you have one.
+Prepare a real testnet **before** `npm test` with `scripts/start-testnet.sh` (builds the release binary if needed and execs it). `npm test` never runs `cargo build` / `cargo run`. It only execs `target/release/pubky-testnet` when:
 
-If testnet cannot start, the harness writes `harness-runtime.json` with `mode: "fallback-http"` and a reason. **This session could not bind the static testnet** because UDP **6881** was already in use (Hypercolor's DHT). The in-process observer (`src/homeserver/fallback.ts`) implements session-cookie `POST /signup`, then PUT/GET/LIST of `/pub/pubky.app/posts/*`. The reference adapter publishes there when `mode` is `fallback-http`. Prefer real `pubky-testnet` when 6881/15411/15412/6288 are free.
+1. Admin is not already up on `:6288`
+2. A bind probe shows **6881 / 15411 / 15412 / 6288** all free
+3. The release binary already exists
+4. Postgres is reachable (`TEST_PUBKY_CONNECTION_STRING` or `127.0.0.1:55435`)
+
+Otherwise it goes straight to the in-process fallback homeserver (no spawn). If it does spawn, wait is capped by `CONTRACT_TESTNET_TIMEOUT_MS` (default 90000) with a stderr line every 10s. A failed spawn kills the **whole process group** (embedded PostgreSQL included) on timeout, teardown, SIGINT, and SIGTERM.
+
+Per-run isolation: fixture Nexus and fallback homeserver bind port 0. Runtime state is a temp file (`JEB_CONTRACT_RUNTIME`, printed at setup) so two concurrent `CONTRACT_ADAPTER=… npm test` processes do not share ports or `harness-runtime.json`.
 
 ## Implement an adapter
 

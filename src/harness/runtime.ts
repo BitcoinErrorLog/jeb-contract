@@ -1,12 +1,28 @@
-import { readFileSync, existsSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import type { HarnessRuntime } from "./global-setup.js";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
+import type { HarnessRuntime } from "./types.js";
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
-const RUNTIME_FILE = join(ROOT, "harness-runtime.json");
+export function runtimeFilePath(): string {
+  const p = process.env.JEB_CONTRACT_RUNTIME;
+  if (!p) {
+    throw new Error(
+      "JEB_CONTRACT_RUNTIME is unset. The vitest config assigns a per-run temp file; do not read repo-root harness-runtime.json.",
+    );
+  }
+  return p;
+}
 
 export function readRuntime(): HarnessRuntime | null {
-  if (!existsSync(RUNTIME_FILE)) return null;
-  return JSON.parse(readFileSync(RUNTIME_FILE, "utf8")) as HarnessRuntime;
+  const file = process.env.JEB_CONTRACT_RUNTIME;
+  if (!file || !existsSync(file)) return null;
+  return JSON.parse(readFileSync(file, "utf8")) as HarnessRuntime;
 }
+
+export function writeRuntime(r: HarnessRuntime): void {
+  const file = runtimeFilePath();
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, JSON.stringify(r, null, 2) + "\n");
+  process.stderr.write(`[jeb-contract] runtime ${file}\n`);
+}
+
+export type { HarnessRuntime };
