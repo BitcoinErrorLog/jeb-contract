@@ -1,0 +1,25 @@
+{
+  "name": "jeb-contract",
+  "version": "0.1.0",
+  "description": "Implementation-independent behavioral contract for Pubky answer bots (Jeb).",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "record-fixtures": "tsx scripts/record-fixtures.ts"
+  },
+  "dependencies": {
+    "@synonymdev/pubky": "^0.6.0-rc.6",
+    "pubky-app-specs": "^0.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

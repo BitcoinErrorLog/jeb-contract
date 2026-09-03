@@ -1,0 +1,27 @@
+[
+  {
+    "details": {
+      "content": "The old one did, we've not added it back to this pubky-app yet. Was waiting on draft preview. No other reason.",
+      "id": "0035MTDX592S0",
+      "indexed_at": 1788263053363,
+      "author": "oojdj73roegeh7r5h59s91qpn8g54j9u8j3q8fdguwy9hb1gy9ao",
+      "kind": "short",
+      "uri": "pubky://oojdj73roegeh7r5h59s91qpn8g54j9u8j3q8fdguwy9hb1gy9ao/pub/pubky.app/posts/0035MTDX592S0",
+      "attachments": [],
+      "lock": null
+    },
+    "counts": {
+      "tags": 0,
+      "unique_tags": 0,
+      "replies": 0,
+      "reposts": 0
+    },
+    "tags": [],
+    "relationships": {
+      "replied": "pubky://operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/posts/0035MT6VS0HEG",
+      "reposted": null,
+      "mentioned": []
+    },
+    "bookmark": null
+  }
+]

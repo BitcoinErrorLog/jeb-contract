@@ -1,0 +1,93 @@
+{
+  "details": {
+    "name": "SHAcollision",
+    "bio": "Buidl #pubky\nhttps://mypubky.com/operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo",
+    "id": "operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo",
+    "links": [
+      {
+        "title": "website",
+        "url": "https://github.com/shaCollision"
+      }
+    ],
+    "status": "\ud83e\udd94simultaneous",
+    "image": "pubky://operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo/pub/pubky.app/files/00330541TTGQ0",
+    "indexed_at": 1786160189949
+  },
+  "counts": {
+    "tagged": 2803,
+    "tags": 61,
+    "unique_tags": 18,
+    "posts": 680,
+    "replies": 494,
+    "collections": 0,
+    "following": 64,
+    "followers": 139,
+    "friends": 48,
+    "bookmarks": 1
+  },
+  "tags": [
+    {
+      "label": "synonym",
+      "taggers": [
+        "gujx6qd8ksydh1makdphd3bxu351d9b8waqka8hfg6q7hnqkxexo",
+        "i77dybuortug6ypkf1r3tj9z3h8aq6xzga15dwef3fmaaohq8wqo",
+        "owoickyrwfakar33zdpmwonswhkysxbmi7xntdqwrmt8mr4f64xo",
+        "operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo",
+        "4snwyct86m383rsduhw5xgcxpw7c63j3pq8x4ycqikxgik8y64ro"
+      ],
+      "taggers_count": 12,
+      "relationship": false
+    },
+    {
+      "label": "dev",
+      "taggers": [
+        "owoickyrwfakar33zdpmwonswhkysxbmi7xntdqwrmt8mr4f64xo",
+        "gujx6qd8ksydh1makdphd3bxu351d9b8waqka8hfg6q7hnqkxexo",
+        "i77dybuortug6ypkf1r3tj9z3h8aq6xzga15dwef3fmaaohq8wqo",
+        "14mho9mbz5st4dk3mjn771dp355qkayiy7wdm5mwgcykoy8bb7gy",
+        "c5nr657md9g8mut1xhjgf9h3cxaio3et9xyupo4fsgi5f7etocey"
+      ],
+      "taggers_count": 12,
+      "relationship": false
+    },
+    {
+      "label": "seems-human",
+      "taggers": [
+        "typo14opf44jexmjxix1nca8n476w7tqro9mox15it94m8purpno",
+        "4snwyct86m383rsduhw5xgcxpw7c63j3pq8x4ycqikxgik8y64ro",
+        "wzggsym1558jc1d5k6nd5o33rpj5wefypemb1na1niwytbnrm9qy",
+        "zi4swidquhuopabaancxeitmhohzmo6nh1amzjkayguytr6xpsbo",
+        "wfexc3im5cuxo85mp4zcig6h59nb5hnfja6ruqcori8ojyp5e4xo"
+      ],
+      "taggers_count": 7,
+      "relationship": false
+    },
+    {
+      "label": "verified-human",
+      "taggers": [
+        "oojdj73roegeh7r5h59s91qpn8g54j9u8j3q8fdguwy9hb1gy9ao",
+        "q9x5sfjbpajdebk45b9jashgb86iem7rnwpmu16px3ens63xzwro",
+        "8wxemkoupm3hfbiiwtbjru9m3fky8pna6ubmo7tud374nthkd5yo",
+        "operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo",
+        "6n9gaxxj676n4gaqziuj7r5torhcoj8s65qmrfym7zqu3ditfroo"
+      ],
+      "taggers_count": 6,
+      "relationship": false
+    },
+    {
+      "label": "\ud83e\uddd9\u200d\u2642\ufe0f",
+      "taggers": [
+        "kzz343fphekkrxeh6zgxe7aawzcb6otydooocoim8fgqekezizuo",
+        "operrr8wsbpr3ue9d4qj41ge1kcc6r7fdiy6o3ugjrrhi4y77rdo",
+        "8wxemkoupm3hfbiiwtbjru9m3fky8pna6ubmo7tud374nthkd5yo",
+        "6n9gaxxj676n4gaqziuj7r5torhcoj8s65qmrfym7zqu3ditfroo"
+      ],
+      "taggers_count": 4,
+      "relationship": false
+    }
+  ],
+  "relationship": {
+    "following": false,
+    "followed_by": false
+  }
+}
