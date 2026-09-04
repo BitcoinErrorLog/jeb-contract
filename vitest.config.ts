@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { defineConfig } from "vitest/config";
 
 if (!process.env.JEB_CONTRACT_RUNTIME) {
-  const dir = mkdtempSync(join(tmpdir(), "jeb-contract-"));
+  const dir = mkdtempSync(join(tmpdir(), "pubky-bot-contract-"));
   process.env.JEB_CONTRACT_RUNTIME = join(dir, "runtime.json");
 }
 if (!process.env.JEB_CONTRACT_RUN_ID) {

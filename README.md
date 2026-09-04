@@ -1,10 +1,16 @@
-# jeb-contract
+# pubky-bot-contract
 
-Implementation-independent **behavioral contract** for Pubky answer bots (working name **Jeb**).
+Implementation-independent **behavioral contract** for Pubky bots that reply to mentions.
 
-It starts a fixture Nexus, signs a test key up on a **real** homeserver, drives any adapter that implements `start`/`stop`, and asserts publish behavior by reading `/pub/pubky.app/posts/*` back through `@synonymdev/pubky`. Bots **must** publish with the real SDK (`session.storage.putJson`). There is no fake homeserver protocol.
+The harness starts a fixture Nexus, signs a test key up on a **real** homeserver, drives any adapter that implements `start`/`stop`, and asserts publish behavior by reading `/pub/pubky.app/posts/*` back through `@synonymdev/pubky`. Bots **must** publish with the real SDK (`session.storage.putJson`). There is no fake homeserver protocol.
 
-The tree includes `src/reference-adapter/` — a deliberately tiny poll-and-publish bot whose **only purpose is to prove this harness**. It is test infrastructure, not an answer bot.
+Cases are the same for every bot: a mention must produce **at most one** valid `PubkyAppPost`. The harness never imports bot internals. A Kit bot's publish module is exercised **through the adapter only** (the same `CONTRACT_ADAPTER` entry the reference adapter uses). Do not import `runPublish` or other bot source from this tree.
+
+The tree includes `src/reference-adapter/` — a deliberately tiny poll-and-publish bot whose **only purpose is to prove this harness**. It is test infrastructure, not a product bot.
+
+Knowledge, voice, and red-team evals stay in the bot repo (`scripts/eval-*.ts`). This package covers publish, idempotency, and trust-boundary behavior only.
+
+Directory name on disk remains `jeb-contract`. The npm package name is `pubky-bot-contract`.
 
 ## Homeserver modes
 
@@ -45,11 +51,11 @@ bash scripts/start-testnet.sh
 
 ## Implement an adapter
 
-Publish **only** via `@synonymdev/pubky`. Use `env.testnet` to pick the client. Do not read harness runtime files.
+Publish **only** via `@synonymdev/pubky`. Use `env.testnet` to pick the client. Do not read harness runtime files. Do not add `envPrefix`, `maxTurnsPerUser`, `blocklist`, or other `ContractEnv` fields until a second bot needs them in this suite.
 
 ```ts
 import { Pubky, Keypair, PublicKey } from "@synonymdev/pubky";
-import type { BotAdapter, ContractEnv } from "jeb-contract";
+import type { BotAdapter, ContractEnv } from "pubky-bot-contract";
 
 export default class MyBot implements BotAdapter {
   async start(env: ContractEnv): Promise<void> {
@@ -67,6 +73,8 @@ export default class MyBot implements BotAdapter {
 }
 ```
 
+`BotAdapter`: `start(env)`, `stop()`, optional `debugLastContext()`.
+
 `ContractEnv`:
 
 | Field | Meaning |
@@ -81,17 +89,17 @@ export default class MyBot implements BotAdapter {
 | `maxRepliesPerThread` | cap per root thread (harness default 2; loop case sets 1) |
 | `testnet` | `true` → `Pubky.testnet()`, `false` → `new Pubky()` |
 
-Against another bot, staging plus `CONTRACT_ADAPTER` are required. Adapters may need extra env — the Jeb adapter (`dist-contract/contract-adapter.js`) also requires `JEB_CONTRACT_MODE=1` and `DATABASE_URL`, and should run with `PUBKY_BOT_SECRET_KEY_FILE` unset so the harness-minted key is the only secret:
+Against another bot, staging plus `CONTRACT_ADAPTER` are required. Adapters may need extra env — the Kit adapter (`dist-contract/contract-adapter.js`) also requires `JEB_CONTRACT_MODE=1` and `DATABASE_URL`, and should run with `PUBKY_BOT_SECRET_KEY_FILE` unset so the harness-minted key is the only secret:
 
 ```bash
-cd /Volumes/vibedrive/vibes-dev/pubky-ai-bot-jeb && npm run -s build && npm run -s build:contract
+cd /Volumes/vibedrive/vibes-dev/pubky-ai-bot-kit && npm run -s build && npm run -s build:contract
 cd /Volumes/vibedrive/vibes-dev/jeb-contract
 env -u PUBKY_BOT_SECRET_KEY_FILE \
 JEB_CONTRACT_MODE=1 \
 DATABASE_URL=postgres://johncarvalho@127.0.0.1:5432/jeb_contract_test \
 CONTRACT_HOMESERVER=staging \
 CONTRACT_STAGING_ADMIN_PASSWORD="$(cat /tmp/jeb-staging-admin.pw)" \
-CONTRACT_ADAPTER=/Volumes/vibedrive/vibes-dev/pubky-ai-bot-jeb/dist-contract/contract-adapter.js \
+CONTRACT_ADAPTER=/Volumes/vibedrive/vibes-dev/pubky-ai-bot-kit/dist-contract/contract-adapter.js \
 npx vitest run tests/contract.test.ts
 ```
 
@@ -105,6 +113,23 @@ npm test
 ```
 
 Per-run isolation: fixture Nexus binds port 0; runtime JSON lives in a temp dir (`JEB_CONTRACT_RUNTIME`).
+
+## Fixture Nexus shapes
+
+Recorded staging envelopes live under `fixtures/staging/`. TypeScript shapes for a Kit bot author are in `src/nexus-types.ts`. Build poll/fetch code against those types, not against a live Nexus dump.
+
+| Type | Fixture file | Request |
+| --- | --- | --- |
+| `NexusNotification` | `notifications.json` | `GET /v0/user/{id}/notifications` |
+| `NexusPostView` / `NexusPostDetails` | `post.json`, `post_details.json` | `GET /v0/post/{author}/{id}` and `/details` |
+| `NexusPostView[]` | `post_replies.json` | `GET /v0/stream/posts?source=post_replies&author_id=&post_id=` |
+| `NexusUserView` / `NexusUserDetails` | `user.json`, `user_details.json` | `GET /v0/user/{id}` and `/details` |
+
+`NexusNotification.body.type` includes `mention`, `reply`, `follow`, `tag_post`, `tag_profile`, `repost`, `post_deleted`, `post_edited`, `new_friend`, `lost_friend`, `untag_post`. Contract cases drive `mention` (and skip malformed / non-mention bodies). A mention body has `mentioned_by` and `post_uri`; a reply body has `replied_by`, `parent_post_uri`, and `reply_uri`.
+
+`NexusPostView.details` has `content`, `id`, `indexed_at`, `author`, `kind`, `uri` (optional `attachments`, `lock`). `relationships` may include `replied`, `reposted`, `mentioned`.
+
+Refresh fixtures with `npm run record-fixtures` (read-only against staging Nexus). See `fixtures/staging/README.md`.
 
 ## Cases
 

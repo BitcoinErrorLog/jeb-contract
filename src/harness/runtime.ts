@@ -22,7 +22,7 @@ export function writeRuntime(r: HarnessRuntime): void {
   const file = runtimeFilePath();
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, JSON.stringify(r, null, 2) + "\n");
-  process.stderr.write(`[jeb-contract] runtime ${file}\n`);
+  process.stderr.write(`[pubky-bot-contract] runtime ${file}\n`);
 }
 
 export type { HarnessRuntime };

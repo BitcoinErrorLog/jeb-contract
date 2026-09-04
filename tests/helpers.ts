@@ -22,7 +22,7 @@ function runId(): string {
 }
 
 export function secretHexFor(label: string): string {
-  return createHash("sha256").update(`jeb-contract:${runId()}:${label}`).digest("hex");
+  return createHash("sha256").update(`pubky-bot-contract:${runId()}:${label}`).digest("hex");
 }
 
 export function publicKeyFor(secretHex: string): string {
@@ -117,7 +117,7 @@ export async function startWorld(opts: {
     testnet: runtime.testnet,
   };
   const adapter = await loadAdapter();
-  nexus.setUser(makeUserView(botPk, "Jeb"));
+  nexus.setUser(makeUserView(botPk, "Bot"));
   nexus.setUser(makeUserView(otherPk, "OtherBot"));
   await adapter.start(env);
   return {

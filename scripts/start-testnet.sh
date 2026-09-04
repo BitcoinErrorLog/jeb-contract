@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Prepare and run a real static pubky-testnet for jeb-contract.
+# Prepare and run a real static pubky-testnet for pubky-bot-contract.
 # npm test will NOT cargo-build; it only execs target/release/pubky-testnet
 # when static ports are free. Use this script ahead of time.
 export TEST_PUBKY_CONNECTION_STRING="${TEST_PUBKY_CONNECTION_STRING:-postgres://postgres:postgres@127.0.0.1:55435/postgres}"

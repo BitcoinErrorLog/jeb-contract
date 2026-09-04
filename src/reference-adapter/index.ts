@@ -1,10 +1,10 @@
 /**
  * Reference adapter — TEST INFRASTRUCTURE, not a product.
  *
- * Tiny bot used only to prove the Jeb contract harness: poll fixture Nexus,
+ * Tiny bot used only to prove the pubky-bot-contract harness: poll fixture Nexus,
  * honor cannedReply / modelDelayMs / maxRepliesPerThread, publish one
  * PubkyAppPost via @synonymdev/pubky (real SDK session.storage.putJson),
- * keep in-memory idempotency. Do not ship this as an answer bot.
+ * keep in-memory idempotency. Do not ship this as a product bot.
  */
 import { Keypair, type Session } from "@synonymdev/pubky";
 import { PubkyAppPostKind, PubkySpecsBuilder } from "pubky-app-specs";

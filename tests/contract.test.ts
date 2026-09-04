@@ -27,7 +27,7 @@ afterEach(async () => {
   }
 });
 
-describe("jeb-contract", () => {
+describe("pubky-bot-contract", () => {
   it("HAPPY: mention → one valid reply, restart does not duplicate", async () => {
     world = await startWorld({ name: "happy" });
     const mention = seedMention(world, {

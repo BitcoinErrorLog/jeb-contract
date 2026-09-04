@@ -1,8 +1,16 @@
 {
-  "name": "jeb-contract",
+  "name": "pubky-bot-contract",
   "version": "0.1.0",
-  "description": "Implementation-independent behavioral contract for Pubky answer bots (Jeb).",
+  "description": "Implementation-independent behavioral contract for Pubky bots that reply to mentions.",
   "type": "module",
+  "types": "./types.d.ts",
+  "exports": {
+    ".": {
+      "types": "./types.d.ts",
+      "import": "./types.d.ts",
+      "default": "./types.d.ts"
+    }
+  },
   "engines": {
     "node": ">=20.0.0"
   },

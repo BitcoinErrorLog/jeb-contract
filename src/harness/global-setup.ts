@@ -31,7 +31,7 @@ function pgUrl(): string {
 function failFastNoHomeserver(detail: string): never {
   throw new Error(
     [
-      "No real homeserver available for jeb-contract.",
+      "No real homeserver available for pubky-bot-contract.",
       detail,
       "",
       "Choose one:",
@@ -61,7 +61,7 @@ async function waitForAdmin(url: string, timeout: number, label: string): Promis
     if (now - lastBeat >= 10_000) {
       lastBeat = now;
       process.stderr.write(
-        `[jeb-contract] ${label} still waiting (${Math.round((now - start) / 1000)}s / ${timeout}ms)\n`,
+        `[pubky-bot-contract] ${label} still waiting (${Math.round((now - start) / 1000)}s / ${timeout}ms)\n`,
       );
     }
     await new Promise((r) => setTimeout(r, 250));
@@ -112,7 +112,7 @@ function writeTestnetRuntime(): HarnessRuntime {
     testnet: true,
   };
   writeRuntime(r);
-  process.stderr.write("[jeb-contract] homeserver mode=pubky-testnet\n");
+  process.stderr.write("[pubky-bot-contract] homeserver mode=pubky-testnet\n");
   return r;
 }
 
@@ -129,7 +129,7 @@ function writeStagingRuntime(): HarnessRuntime {
   };
   writeRuntime(r);
   process.stderr.write(
-    "[jeb-contract] homeserver mode=staging (creates throwaway accounts/posts on staging.pubky.app)\n",
+    "[pubky-bot-contract] homeserver mode=staging (creates throwaway accounts/posts on staging.pubky.app)\n",
   );
   return r;
 }
@@ -145,7 +145,7 @@ async function tryStartLocalTestnet(): Promise<HarnessRuntime | null> {
   if (!existsSync(bin)) return null;
   if (!(await postgresReady())) return null;
 
-  process.stderr.write(`[jeb-contract] spawning ${bin} (timeout ${timeoutMs()}ms)\n`);
+  process.stderr.write(`[pubky-bot-contract] spawning ${bin} (timeout ${timeoutMs()}ms)\n`);
   child = spawnProcessGroup(bin, [], {
     cwd: CORE,
     env: { ...process.env, TEST_PUBKY_CONNECTION_STRING: pgUrl() },
@@ -194,7 +194,7 @@ export default async function globalSetup(ctx?: {
     const { mkdtempSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
     const { join: j } = await import("node:path");
-    process.env.JEB_CONTRACT_RUNTIME = j(mkdtempSync(j(tmpdir(), "jeb-contract-")), "runtime.json");
+    process.env.JEB_CONTRACT_RUNTIME = j(mkdtempSync(j(tmpdir(), "pubky-bot-contract-")), "runtime.json");
   }
   ctx?.provide("jebRuntimePath", process.env.JEB_CONTRACT_RUNTIME);
   await startHomeserver();
