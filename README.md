@@ -78,10 +78,24 @@ export default class MyBot implements BotAdapter {
 | `pgUrl` | optional bot-owned Postgres |
 | `cannedReply` | text to publish instead of a model |
 | `modelDelayMs` | must delay that long before publish |
-| `maxRepliesPerThread` | cap per root thread (contract default 1) |
+| `maxRepliesPerThread` | cap per root thread (harness default 2; loop case sets 1) |
 | `testnet` | `true` → `Pubky.testnet()`, `false` → `new Pubky()` |
 
-Against another bot:
+Against another bot, staging plus `CONTRACT_ADAPTER` are required. Adapters may need extra env — the Jeb adapter (`dist-contract/contract-adapter.js`) also requires `JEB_CONTRACT_MODE=1` and `DATABASE_URL`, and should run with `PUBKY_BOT_SECRET_KEY_FILE` unset so the harness-minted key is the only secret:
+
+```bash
+cd /Volumes/vibedrive/vibes-dev/pubky-ai-bot-jeb && npm run -s build && npm run -s build:contract
+cd /Volumes/vibedrive/vibes-dev/jeb-contract
+env -u PUBKY_BOT_SECRET_KEY_FILE \
+JEB_CONTRACT_MODE=1 \
+DATABASE_URL=postgres://johncarvalho@127.0.0.1:5432/jeb_contract_test \
+CONTRACT_HOMESERVER=staging \
+CONTRACT_STAGING_ADMIN_PASSWORD="$(cat /tmp/jeb-staging-admin.pw)" \
+CONTRACT_ADAPTER=/Volumes/vibedrive/vibes-dev/pubky-ai-bot-jeb/dist-contract/contract-adapter.js \
+npx vitest run tests/contract.test.ts
+```
+
+Create `jeb_contract_test` first if it does not exist. Do not echo the password file. Generic adapters that need no extra env:
 
 ```bash
 CONTRACT_HOMESERVER=staging \
@@ -101,7 +115,7 @@ Per-run isolation: fixture Nexus binds port 0; runtime JSON lives in a temp dir 
 - **25-post ancestor chain**: reply exists, no crash; `debugLastContext()` created_at order if implemented.
 - **100 duplicate notifications**: exactly one reply.
 - **Self-mention**: no reply; later ordinary mention answered.
-- **Bot-to-bot loop**: no more than `maxRepliesPerThread` (default 1) in the same thread.
+- **Bot-to-bot loop**: sets `maxRepliesPerThread=1` explicitly (suite default is 2 so a single reply never hits the cap). No second reply in the same thread. The one published reply may carry a bot-defined last-reply policy prefix; the canned body must still appear exactly once as a suffix. Other cases keep exact equality so padding cannot pass unnoticed.
 - **modelDelayMs**: delay honored; a later mention still finishes within budget (staging budget 70s).
 - **Crash after publish**: stop immediately after the write, restart, no second reply; later mention answered.
 - **start/end re-delivery**: overlapping poll window, one reply.

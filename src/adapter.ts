@@ -20,7 +20,8 @@ export interface ContractEnv {
   modelDelayMs: number;
   /**
    * Maximum number of replies this bot may publish in one thread
-   * (root post + descendants). Contract default is 1.
+   * (root post + descendants). Harness default is 2 so a single reply
+   * does not hit the cap; the bot-to-bot loop case sets 1 explicitly.
    */
   maxRepliesPerThread: number;
   /**

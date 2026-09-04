@@ -111,7 +111,9 @@ export async function startWorld(opts: {
     secretKeyHex: botSecret,
     cannedReply: opts.cannedReply ?? `canned:${opts.name}`,
     modelDelayMs: opts.modelDelayMs ?? 0,
-    maxRepliesPerThread: opts.maxRepliesPerThread ?? 1,
+    // ≥2 so a single reply never hits the cap (bots may attach a last-reply
+    // policy notice when they reach it). Cases that assert the cap pass 1.
+    maxRepliesPerThread: opts.maxRepliesPerThread ?? 2,
     testnet: runtime.testnet,
   };
   const adapter = await loadAdapter();
@@ -213,6 +215,30 @@ export function expectOneValidReply(posts: ListedPost[], parent: string, canned:
   const reply = hits[0]!;
   const validated = validatePubkyAppPost(reply.json, parent);
   expect(validated.content).toBe(canned);
+  return reply;
+}
+
+/**
+ * Cap-hit case only. Exact equality stays the default so bots cannot pad
+ * unnoticed. When the harness sets maxRepliesPerThread=1, a bot may prefix
+ * a last-reply policy notice; the canned body must still appear exactly once
+ * and as a suffix (implementation-independent — no bot-specific prose).
+ */
+export function expectOneValidReplyEndingWith(
+  posts: ListedPost[],
+  parent: string,
+  canned: string,
+): ListedPost {
+  const hits = repliesTo(posts, parent);
+  expect(hits.length, `expected exactly one reply to ${parent}, got ${hits.length}`).toBe(1);
+  const reply = hits[0]!;
+  const validated = validatePubkyAppPost(reply.json, parent);
+  expect(
+    validated.content.endsWith(canned),
+    `reply to ${parent} should end with canned text`,
+  ).toBe(true);
+  const occurrences = validated.content.split(canned).length - 1;
+  expect(occurrences, `canned text should appear exactly once in reply to ${parent}`).toBe(1);
   return reply;
 }
 

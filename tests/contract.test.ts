@@ -4,6 +4,7 @@ import { postUri } from "../src/uri.js";
 import {
   ensureSuiteBot,
   expectOneValidReply,
+  expectOneValidReplyEndingWith,
   expectStableCount,
   isStaging,
   seedMention,
@@ -158,14 +159,14 @@ describe("jeb-contract", () => {
     expectOneValidReply(posts, later.uri, world.env.cannedReply);
   });
 
-  it("EDGE: bot-to-bot loop respects maxRepliesPerThread (default 1)", async () => {
+  it("EDGE: bot-to-bot loop respects maxRepliesPerThread (explicit 1)", async () => {
     world = await startWorld({ name: "loop", maxRepliesPerThread: 1 });
     const first = seedMention(world, {
       author: world.otherPk,
       content: `start pubky${world.botPk}`,
     });
     const posts = await waitReplies(world, 1);
-    expectOneValidReply(posts, first.uri, world.env.cannedReply);
+    expectOneValidReplyEndingWith(posts, first.uri, world.env.cannedReply);
     seedMention(world, {
       author: world.otherPk,
       content: `loop pubky${world.botPk}`,
