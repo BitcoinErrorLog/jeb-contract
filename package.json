@@ -1,6 +1,7 @@
 {
   "name": "pubky-bot-contract",
   "version": "0.1.0",
+  "license": "MIT",
   "description": "Implementation-independent behavioral contract for Pubky bots that reply to mentions.",
   "type": "module",
   "types": "./types.d.ts",
